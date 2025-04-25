@@ -8,7 +8,7 @@
 #include <pthread.h>
 
 #define N 13
-
+#define SERVER "./serverFIFO"
 extern char **environ;
 char uName[20];
 
@@ -27,33 +27,66 @@ void terminate(int sig) {
 }
 
 void sendmsg (char *user, char *target, char *msg) {
-	// TODO:
 	// Send a request to the server to send the message (msg) to the target user (target)
 	// by creating the message structure and writing it to server's FIFO
+	int fileDescriptor;
+	struct message message;
 
+	// Populate message
+	strncpy(message.source, user, 50);
+	strncpy(message.target, target, 50);
+	strncpy(message.msg, msg, 200);
 
+	// Open server pipe for writing
+	fileDescriptor = open(SERVER, O_WRONLY);
+	if(fileDescriptor == -1){
+		perror("Failed to open server");
+		return;
+	}
 
+	// Write message to server
+	write(fileDescriptor, &message, sizeof(struct message)) != sizeof(struct message);
 
-
-
-
+	// close pipe
+	close(fileDescriptor);
 
 }
 
 void* messageListener(void *arg) {
-	// TODO:
 	// Read user's own FIFO in an infinite loop for incoming messages
 	// The logic is similar to a server listening to requests
 	// print the incoming message to the standard output in the
 	// following format
 	// Incoming message from [source]: [message]
 	// put an end of line at the end of the message
+	char* userName = (char*)arg;
+	int fileDescriptor;
+	struct message incomingMessage;
+
+	// open fifo for reading
+	fileDescriptor = open(userName, O_RDONLY);
+	if(fileDescriptor == -1){
+		perror("Failed to open user fifo");
+		pthread_exit((void*)1);
+	}
+
+	// Loop reading messages
+	while(1){
+		ssize_t bytes = read(fileDescriptor, &incomingMessage, sizeof(struct message));
+		if(bytes == sizeof(struct message)){
+			printf("Incoming message from %s: %s\n", incomingMessage.source, incomingMessage.msg);
+			fflush(stdout);// make sure output is immediate
+		} else if(bytes == 0){
+			// if writer closed fifo, reopen it
+			close(fileDescriptor);
+			fileDescriptor = open(userName, O_RDONLY);
+		}
+		else perror("Failed to read from fifo");
+	}
 
 
 
-
-
-
+	close(fileDescriptor);
 	pthread_exit((void*)0);
 }
 
@@ -85,7 +118,11 @@ int main(int argc, char **argv) {
 
     // TODO:
     // create the message listener thread
-
+	pthread_t listenerThread;
+	if(pthread_create(&listenerThread, NULL, messageListener, (void*)uName) != 0){
+		perror("Failed to create message listener thread"); // if thread creation fails
+		exit(1);
+	}
 
 
 
@@ -111,7 +148,7 @@ int main(int argc, char **argv) {
 	}
 
 	if (strcmp(cmd,"sendmsg")==0) {
-		// TODO: Create the target user and
+		// Create the target user and
 		// the message string and call the sendmsg function
 
 		// NOTE: The message itself can contain spaces
@@ -123,16 +160,28 @@ int main(int argc, char **argv) {
 		// printf("sendmsg: you have to specify target user\n");
 		// if no message is specified, you should print the followingA
  		// printf("sendmsg: you have to enter a message\n");
+		char* target = strtok(NULL, " ");
+		if(target == NULL){
+			printf("sendmsg: you have specify target user\n");
+			continue;
+		}
 
+		// Rest of line is message
+		char* messageStart = strstr(line2, target);
+		if(messageStart == NULL){
+			printf("sendmsg: you have to enter a message\n");
+			continue;
+		}
 
+		messageStart += strlen(target);
+		while(*messageStart == ' ') messageStart++; // skip spaces
 
+		if(strlen(messageStart) == 0){
+			printf("sendmsg: you have to enter a message");
+			continue;
+		}
 
-
-
-
-
-
-
+		sendmsg(uName, target, messageStart);
 		continue;
 	}
 

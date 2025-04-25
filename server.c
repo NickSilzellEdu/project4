@@ -20,7 +20,6 @@ void terminate(int sig) {
 
 int main() {
 	int server;
-	int target;
 	int dummyfd;
 	struct message req;
 	signal(SIGPIPE,SIG_IGN);
@@ -29,26 +28,30 @@ int main() {
 	dummyfd = open("serverFIFO",O_WRONLY);
 
 	while (1) {
-		// TODO:
 		// read requests from serverFIFO
+		ssize_t bytes = read(server, &req, sizeof(struct message));
+		if(bytes == sizeof(struct message)){
+			printf("Received a request from %s to send the message %s to %s.\n",req.source,req.msg,req.target);
 
+			// open target
+			int targetFileDescriptor = open(req.target, O_WRONLY);
+			if(targetFileDescriptor == -1){
+				perror("Failed to open target pipe");
+				continue;
+			}
 
-
-
-
-
-		printf("Received a request from %s to send the message %s to %s.\n",req.source,req.msg,req.target);
-
-		// TODO:
-		// open target FIFO and write the whole message struct to the target FIFO
-		// close target FIFO after writing the message
-
-
-
-
-
-
-
+			// write message to target
+			write(targetFileDescriptor, &req, sizeof(struct message)) != sizeof(struct message);
+			
+			// close target pipe
+			close(targetFileDescriptor);
+		}
+		else if(bytes == 0){
+			// reopen server on end of file
+			close(server);
+			server = open("./server", O_RDONLY);
+		}
+		else perror("read");
 	}
 	close(server);
 	close(dummyfd);
